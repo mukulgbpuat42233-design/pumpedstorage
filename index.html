@@ -503,6 +503,9 @@ button:focus-visible,.btn:focus-visible,.nav-item:focus-visible,.nav-link:focus-
 #storageInfo{line-height:1.35}
 </style>
 
+<style id="cloud-sync-status-v11">
+body[data-cloud-ready="1"] #cloudStatus{font-weight:800}
+</style>
 </head>
 <body>
 <div class="layout">
@@ -645,7 +648,7 @@ button:focus-visible,.btn:focus-visible,.nav-item:focus-visible,.nav-link:focus-
 <div id="authModal" style="display:none;position:fixed;inset:0;background:#061735aa;z-index:20;align-items:center;justify-content:center;padding:20px">
   <div class="card" style="width:min(430px,100%);margin:0">
     <h3>Cloud Login</h3>
-    <p style="font-size:11px;color:#66758b;margin-top:-5px">Sign in to sync your PSP data securely to cloud storage.</p><div id="authSetupHint" style="display:none;background:#fff7e8;border:1px solid #f0d39a;border-radius:10px;padding:10px;margin:8px 0 12px;font-size:11px;color:#7a5700">Cloud login is not configured on this browser yet. Connect your Supabase project first.</div>
+    <p style="font-size:11px;color:#66758b;margin-top:-5px">Sign in to sync your PSP data securely to cloud storage.</p><div id="authSetupHint" style="display:none;background:#fff7e8;border:1px solid #f0d39a;border-radius:10px;padding:10px;margin:8px 0 12px;font-size:11px;color:#7a5700">Supabase Cloud is configured. Login to sync your market data.</div>
     <div class="field" style="margin-bottom:10px"><label>Email</label><input id="authEmail" type="email" placeholder="you@example.com"></div>
     <div class="field" style="margin-bottom:10px"><label>Password</label><input id="authPassword" type="password" placeholder="Password"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn outline" id="closeAuth">CLOSE</button><button class="btn outline" id="openSetupFromAuth">SETUP CLOUD</button><button class="btn primary" id="signupBtn">SIGN UP</button><button class="btn green" id="loginBtn">LOGIN</button></div>
@@ -662,6 +665,15 @@ button:focus-visible,.btn:focus-visible,.nav-item:focus-visible,.nav-link:focus-
     <div class="status" id="setupStatus"></div>
   </div>
 </div>
+<script id="tehri-supabase-project-config">
+(function(){
+  try{
+    localStorage.setItem('tehri_supabase_url','https://kpknazwugehnohojixtl.supabase.co');
+    localStorage.setItem('tehri_supabase_anon','sb_publishable_iFnVavidtYI2vODRItISkA_YqGxH1zR');
+  }catch(e){console.warn('Supabase config storage unavailable',e)}
+})();
+</script>
+
 <script>
 const DB='tehri_psp_month_stack_v2';
 const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -756,7 +768,11 @@ async function clearMarketDataBackup(){
 
 function updateStorageInfo(){const el=$('storageInfo');if(!el)return;try{const raw=localStorage.getItem(DB)||'';const mb=(raw.length*2/1024/1024).toFixed(2);el.textContent=`Local browser storage used by saved monthly data: ${mb} MB. Clear old months if storage is full.`}catch(e){el.textContent='Local browser storage'}}
 function setCloudStatus(t,good){document.body.dataset.cloudStatus=t;document.body.dataset.cloudReady=good?'1':'0'}
-async function initSupabase(){const u=localStorage.getItem(SB_URL_KEY),k=localStorage.getItem(SB_ANON_KEY);if(!u||!k){setCloudStatus('LOCAL',false);return}try{sb=window.supabase.createClient(u,k);const {data}=await sb.auth.getSession();sbUser=data.session?.user||null;cloudReady=true;setCloudStatus(sbUser?'CLOUD':'CLOUD • LOGIN',!!sbUser);sb.auth.onAuthStateChange((_e,session)=>{sbUser=session?.user||null;setCloudStatus(sbUser?'CLOUD':'CLOUD • LOGIN',!!sbUser);});}catch(e){setCloudStatus('LOCAL',false)}}
+async function initSupabase(){const u=localStorage.getItem(SB_URL_KEY),k=localStorage.getItem(SB_ANON_KEY);if(!u||!k){setCloudStatus('LOCAL',false);return}try{sb=window.supabase.createClient(u,k);const {data}=await sb.auth.getSession();sbUser=data.session?.user||null;cloudReady=true;setCloudStatus(sbUser?'CLOUD':'CLOUD • LOGIN',!!sbUser);sb.auth.onAuthStateChange((_e,session)=>{
+  sbUser=session?.user||null;
+  setCloudStatus(sbUser?'CLOUD':'CLOUD • LOGIN',!!sbUser);
+  if(sbUser) setTimeout(()=>syncCloudToLocal().catch(e=>console.warn('Cloud sync failed:',e)),0);
+});}catch(e){setCloudStatus('LOCAL',false)}}
 async function cloudList(){if(!cloudReady||!sbUser)return null;const {data,error}=await sb.from('psp_monthly_data').select('*').eq('user_id',sbUser.id);if(error)throw error;return data||[]}
 async function cloudGet(k){if(!cloudReady||!sbUser)return null;const {data,error}=await sb.from('psp_monthly_data').select('*').eq('user_id',sbUser.id).eq('record_key',k).maybeSingle();if(error)throw error;return data?.record||null}
 async function cloudSave(rec){if(!cloudReady||!sbUser)return false;const {error}=await sb.from('psp_monthly_data').upsert({user_id:sbUser.id,record_key:key(rec.segment,rec.year,rec.month),record:rec},{onConflict:'user_id,record_key'});if(error)throw error;return true}
@@ -1138,7 +1154,13 @@ $('closeAuth').addEventListener('click',()=> $('authModal').style.display='none'
 $('openSetupFromAuth').addEventListener('click',()=>{ $('authModal').style.display='none'; $('setupModal').style.display='flex'; $('sbUrl').value=localStorage.getItem(SB_URL_KEY)||''; $('sbKey').value=localStorage.getItem(SB_ANON_KEY)||''; });
 $('signupBtn').addEventListener('click',async()=>{if(!cloudReady){$('authStatus').textContent='Cloud login is not configured. Click SETUP CLOUD first.';return}const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||!password){$('authStatus').textContent='Enter email and password.';return}try{const {error}=await sb.auth.signUp({email,password});$('authStatus').textContent=error?error.message:'Account created. Check your email if confirmation is enabled.';}catch(e){$('authStatus').textContent=e.message}});
 $('loginBtn').addEventListener('click',async()=>{if(!cloudReady){$('authStatus').textContent='Cloud login is not configured. Click SETUP CLOUD first.';return}const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||!password){$('authStatus').textContent='Enter email and password.';return}try{const {error}=await sb.auth.signInWithPassword({email,password});if(error){$('authStatus').textContent=error.message;return}$('authModal').style.display='none';await syncCloudToLocal();}catch(e){$('authStatus').textContent=e.message}});
-$('cloudStatus').addEventListener('click',()=>{if(!cloudReady||!sbUser){$('setupModal').style.display='flex';$('sbUrl').value=localStorage.getItem(SB_URL_KEY)||'';$('sbKey').value=localStorage.getItem(SB_ANON_KEY)||''}});
+$('cloudStatus').addEventListener('click',()=>{
+ if(sbUser){sb.auth.signOut();return}
+ if(cloudReady){openAuth();return}
+ $('setupModal').style.display='flex';
+ $('sbUrl').value=localStorage.getItem(SB_URL_KEY)||'';
+ $('sbKey').value=localStorage.getItem(SB_ANON_KEY)||'';
+});
 $('closeSetup').addEventListener('click',()=> $('setupModal').style.display='none');
 $('saveSetup').addEventListener('click',async()=>{const u=$('sbUrl').value.trim(),k=$('sbKey').value.trim();if(!u||!k){$('setupStatus').textContent='Both Project URL and anon/publishable key are required.';return}localStorage.setItem(SB_URL_KEY,u);localStorage.setItem(SB_ANON_KEY,k);await initSupabase();$('setupStatus').textContent=cloudReady?'Supabase connected. You can now log in.':'Connection failed. Please verify the Project URL and key.';if(cloudReady){setTimeout(()=>{ $('setupModal').style.display='none';openAuth(); },500)}});
 initSupabase().then(()=>{if(cloudReady&&sbUser)syncCloudToLocal().catch(e=>console.warn(e));});
@@ -1287,6 +1309,24 @@ initSupabase().then(()=>{if(cloudReady&&sbUser)syncCloudToLocal().catch(e=>conso
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',restore);
   else restore();
+})();
+</script>
+
+
+<script id="supabase-setup-auto-hide">
+(function(){
+  function hideIfConfigured(){
+    try{
+      const u=localStorage.getItem('tehri_supabase_url');
+      const k=localStorage.getItem('tehri_supabase_anon');
+      const modal=document.getElementById('setupModal');
+      if(u && k && modal && !document.body.dataset.supabaseSetupForced){
+        modal.style.display='none';
+      }
+    }catch(e){}
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',hideIfConfigured);
+  else hideIfConfigured();
 })();
 </script>
 
