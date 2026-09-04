@@ -79,6 +79,19 @@ body[data-seg="TAM"]{--seg-main:#c91d2e;--seg-soft:#fde8eb;--seg-pale:#fff5f6;--
 @media(max-width:760px){.scenario-live-flow{padding:12px}.live-flow-track{overflow-x:auto;justify-content:flex-start;padding-bottom:4px}.live-flow-card{flex-basis:185px}.live-connector{flex:0 0 55px}.live-flow-head span:last-child{display:none}}
 @media(prefers-reduced-motion:reduce){.live-dot,.live-flow-card::after,.live-connector::before,.energy-pulse,.live-meter i,.rotor{animation:none!important}.live-connector::before{background:#7da3cc}.energy-pulse{display:none}}
 @media(max-width:520px){.brand-logo{width:132px;height:96px;flex-basis:96px}.brand-copy strong{font-size:24px}}
+
+/* Colorful Schedule Report Action Buttons */
+.schedule-actionbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px;border-radius:14px;background:linear-gradient(135deg,#f7faff 0%,#eef5ff 100%);border:1px solid #c9d8ee}
+.schedule-actionbar .report-action{min-height:58px;padding:0 22px;border:0 !important;border-radius:12px;color:#fff !important;font-weight:900;font-size:14px;letter-spacing:.25px;box-shadow:0 5px 14px rgba(20,50,90,.18);transition:transform .18s ease,box-shadow .18s ease,filter .18s ease;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:9px}
+.schedule-actionbar .report-action:hover{transform:translateY(-2px);filter:brightness(1.06);box-shadow:0 8px 18px rgba(20,50,90,.24)}
+.schedule-actionbar .report-action:active{transform:translateY(0)}
+.schedule-actionbar .report-action.generate{background:linear-gradient(135deg,#123e7a,#2166b1) !important}
+.schedule-actionbar .report-action.pdf{background:linear-gradient(135deg,#c91d2e,#ed4b5c) !important}
+.schedule-actionbar .report-action.excel{background:linear-gradient(135deg,#168653,#29aa72) !important}
+.schedule-actionbar .report-action .action-icon{font-size:21px;line-height:1}
+.schedule-actionbar #scheduleReportStatus{margin-left:auto;font-weight:900}
+@media(max-width:760px){.schedule-actionbar .report-action{width:100%}.schedule-actionbar #scheduleReportStatus{margin-left:0;width:100%;text-align:center}}
+
 </style>
 </head>
 <body>
@@ -142,7 +155,7 @@ body[data-seg="TAM"]{--seg-main:#c91d2e;--seg-soft:#fde8eb;--seg-pale:#fff5f6;--
   </div>
   <div class="schedule-drop" id="scheduleStatus">No PSP schedule uploaded for this selection.</div><div id="scheduleValidation" class="validation-panel" style="display:none"></div>
   <div class="schedule-note"><b>Calculation basis:</b> Schedule &lt; 0 = pumping, Schedule &gt; 0 = generation. Each block is 15 minutes (0.25 h). Gross market opportunity = Generation Revenue − Pumping Cost, using the historical MCP for the <b>same Date + Block</b>. Efficiency, auxiliary consumption and other charges are not deducted unless added later.</div>
-  <div class="schedule-actionbar"><button class="btn primary" id="scheduleGenerateBtn">GENERATE MARKET OPPORTUNITY REPORT</button><button class="btn outline" id="schedulePdfBtn">DOWNLOAD PDF</button><button class="btn outline" id="scheduleExcelBtn">DOWNLOAD EXCEL</button><span id="scheduleReportStatus" class="ok">READY AFTER MATCHING</span></div><div id="scheduleResults" class="schedule-results"></div>
+  <div class="schedule-actionbar"><button class="report-action generate" id="scheduleGenerateBtn"><span class="action-icon">📊</span>GENERATE MARKET OPPORTUNITY REPORT</button><button class="report-action pdf" id="schedulePdfBtn"><span class="action-icon">📄</span>DOWNLOAD PDF</button><button class="report-action excel" id="scheduleExcelBtn"><span class="action-icon">📗</span>DOWNLOAD EXCEL</button><span id="scheduleReportStatus" class="ok">READY AFTER MATCHING</span></div><div id="scheduleResults" class="schedule-results"></div>
 </div>
 </section>
 
@@ -510,7 +523,7 @@ $('runScenario').addEventListener('click',async()=>{if(!scenarioRecord){alert('P
 function getScenarioDownloadRecord(){if(scenarioRecord)return scenarioRecord;let db=getDB(),rec=db[key(currentSeg,+$('syear').value,+$('smonth').value)];return rec||null}
 $('scenarioPdfBtn').addEventListener('click',()=>{let rec=getScenarioDownloadRecord();if(!rec){alert('Please load and save a scenario first.');return}if(!rec.scenario)rec={...rec,scenario:{ranges:scenarioRanges||rec.baseRanges}};exportPDF(rec,'SCENARIO')});
 $('scenarioExcelBtn').addEventListener('click',()=>{let rec=getScenarioDownloadRecord();if(!rec){alert('Please load and save a scenario first.');return}if(!rec.scenario)rec={...rec,scenario:{ranges:scenarioRanges||rec.baseRanges}};exportExcel(rec,'SCENARIO')});
-initReportControls();for(let y=2024;y<=2035;y++)$('scheduleYear').add(new Option(y,y));MONTHS.forEach((m,i)=>$('scheduleMonth').add(new Option(m,i+1)));$('scheduleYear').value=2026;$('scheduleMonth').value=8;$('scheduleYear').addEventListener('change',loadScheduleRecord);$('scheduleMonth').addEventListener('change',loadScheduleRecord);$('scheduleUploadBtn').addEventListener('click',()=>uploadSchedule());setSeg('DAM');refreshCurrent();renderStack();renderReportPreview();loadScheduleRecord();setScenarioDownloadState(false);$('scenarioTiming').innerHTML=timingHTML(rangeFor(2026,8),true);bindTimingUpdates('scenarioTiming');
+initReportControls();for(let y=2024;y<=2035;y++)$('scheduleYear').add(new Option(y,y));MONTHS.forEach((m,i)=>$('scheduleMonth').add(new Option(m,i+1)));$('scheduleYear').value=2026;$('scheduleMonth').value=8;$('scheduleYear').addEventListener('change',loadScheduleRecord);$('scheduleMonth').addEventListener('change',loadScheduleRecord);$('scheduleUploadBtn').addEventListener('click',()=>uploadSchedule());$('scheduleGenerateBtn').addEventListener('click',generateScheduleReport);$('schedulePdfBtn').addEventListener('click',()=>{try{exportSchedulePDF()}catch(e){console.error(e);alert('PDF download failed: '+e.message)}});$('scheduleExcelBtn').addEventListener('click',()=>{exportScheduleExcel().catch(e=>{console.error(e);alert('Excel download failed: '+e.message)})});setSeg('DAM');refreshCurrent();renderStack();renderReportPreview();loadScheduleRecord();setScenarioDownloadState(false);$('scenarioTiming').innerHTML=timingHTML(rangeFor(2026,8),true);bindTimingUpdates('scenarioTiming');
 function openAuth(){
   $('authModal').style.display='flex';
   $('authSetupHint').style.display=cloudReady?'none':'block';
