@@ -506,6 +506,23 @@ button:focus-visible,.btn:focus-visible,.nav-item:focus-visible,.nav-link:focus-
 <style id="cloud-sync-status-v11">
 body[data-cloud-ready="1"] #cloudStatus{font-weight:800}
 </style>
+
+<style id="supabase-production-ui-fix">
+#openSetupFromAuth{display:none!important}
+#setupModal{display:none!important}
+</style>
+<script id="supabase-production-init-fix">
+(function(){
+  function ensureCloudConfig(){
+    try{
+      localStorage.setItem('tehri_supabase_url','https://kpknazwugehnohojixtl.supabase.co');
+      localStorage.setItem('tehri_supabase_anon','sb_publishable_iFnVavidtYI2vODRItISkA_YqGxH1zR');
+    }catch(e){}
+  }
+  ensureCloudConfig();
+})();
+</script>
+
 </head>
 <body>
 <div class="layout">
@@ -1154,13 +1171,15 @@ $('closeAuth').addEventListener('click',()=> $('authModal').style.display='none'
 $('openSetupFromAuth').addEventListener('click',()=>{ $('authModal').style.display='none'; $('setupModal').style.display='flex'; $('sbUrl').value=localStorage.getItem(SB_URL_KEY)||''; $('sbKey').value=localStorage.getItem(SB_ANON_KEY)||''; });
 $('signupBtn').addEventListener('click',async()=>{if(!cloudReady){$('authStatus').textContent='Cloud login is not configured. Click SETUP CLOUD first.';return}const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||!password){$('authStatus').textContent='Enter email and password.';return}try{const {error}=await sb.auth.signUp({email,password});$('authStatus').textContent=error?error.message:'Account created. Check your email if confirmation is enabled.';}catch(e){$('authStatus').textContent=e.message}});
 $('loginBtn').addEventListener('click',async()=>{if(!cloudReady){$('authStatus').textContent='Cloud login is not configured. Click SETUP CLOUD first.';return}const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||!password){$('authStatus').textContent='Enter email and password.';return}try{const {error}=await sb.auth.signInWithPassword({email,password});if(error){$('authStatus').textContent=error.message;return}$('authModal').style.display='none';await syncCloudToLocal();}catch(e){$('authStatus').textContent=e.message}});
-$('cloudStatus').addEventListener('click',()=>{
- if(sbUser){sb.auth.signOut();return}
- if(cloudReady){openAuth();return}
- $('setupModal').style.display='flex';
- $('sbUrl').value=localStorage.getItem(SB_URL_KEY)||'';
- $('sbKey').value=localStorage.getItem(SB_ANON_KEY)||'';
-});
+if($('cloudStatus')){
+ $('cloudStatus').addEventListener('click',()=>{
+  if(sbUser){sb.auth.signOut();return}
+  if(cloudReady){openAuth();return}
+  $('setupModal').style.display='flex';
+  $('sbUrl').value=localStorage.getItem(SB_URL_KEY)||'';
+  $('sbKey').value=localStorage.getItem(SB_ANON_KEY)||'';
+ });
+}
 $('closeSetup').addEventListener('click',()=> $('setupModal').style.display='none');
 $('saveSetup').addEventListener('click',async()=>{const u=$('sbUrl').value.trim(),k=$('sbKey').value.trim();if(!u||!k){$('setupStatus').textContent='Both Project URL and anon/publishable key are required.';return}localStorage.setItem(SB_URL_KEY,u);localStorage.setItem(SB_ANON_KEY,k);await initSupabase();$('setupStatus').textContent=cloudReady?'Supabase connected. You can now log in.':'Connection failed. Please verify the Project URL and key.';if(cloudReady){setTimeout(()=>{ $('setupModal').style.display='none';openAuth(); },500)}});
 initSupabase().then(()=>{if(cloudReady&&sbUser)syncCloudToLocal().catch(e=>console.warn(e));});
