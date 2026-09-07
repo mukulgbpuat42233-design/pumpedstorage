@@ -676,149 +676,53 @@ const BASE={Jan:[93,16,23,38,41,64,73,90],Feb:[93,16,23,38,41,64,73,90],Mar:[93,
 let currentSeg='DAM', mode='BASE', scenarioRanges=null, scenarioRecord=null;
 const $=x=>document.getElementById(x);
 function key(seg,y,m){return `${seg}|${y}|${String(m).padStart(2,'0')}`}
-let sb=null, sbUser=null, cloudReady=false;
-const SB_URL_KEY='tehri_supabase_url',SB_ANON_KEY='tehri_supabase_anon';
-const TEHRI_SUPABASE_URL='https://kpknazwugehnohojixtl.supabase.co', TEHRI_SUPABASE_KEY='sb_publishable_iFnVavidtYI2vODRItISkA_YqGxH1zR';
-let dbCache=null,marketIndexCache=null;
-function getDB(){if(dbCache)return dbCache;try{dbCache=JSON.parse(localStorage.getItem(DB)||'{}')}catch(e){dbCache={}}return dbCache}
-function invalidateDbCaches(){dbCache=null;marketIndexCache=null}
-function putDB(db){
-  dbCache=db; marketIndexCache=null;
-  let localOK=true;
-  try{
-    localStorage.setItem(DB,JSON.stringify(db));
-    try{localStorage.setItem(DB+'_saved_at',String(Date.now()))}catch(_){}
-  }catch(e){
-    localOK=false;
-    console.warn('localStorage full; IndexedDB backup will be used',e);
-  }
-  persistMarketDataBackup(db);
-  updateStorageInfo();
-  if(!localOK){
-    setTimeout(()=>alert('Browser local storage is full, but your market data is being kept in the larger browser database (IndexedDB).'),50);
-  }
-  return true;
-}
-
-/* === PERSISTENT MARKET DATA BACKUP (IndexedDB) ===
-   localStorage remains the fast cache; IndexedDB keeps a durable browser copy
-   with substantially more capacity. This does not require any server/login.
-*/
-const MARKET_BACKUP_DB='tehri_psp_persistent_store_v1', MARKET_BACKUP_STORE='snapshots';
-let marketBackupReady=null;
-function openMarketBackup(){
-  if(marketBackupReady) return marketBackupReady;
-  marketBackupReady=new Promise((resolve,reject)=>{
-    if(!window.indexedDB) return reject(new Error('IndexedDB unavailable'));
-    const req=indexedDB.open(MARKET_BACKUP_DB,1);
-    req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(MARKET_BACKUP_STORE))req.result.createObjectStore(MARKET_BACKUP_STORE)};
-    req.onsuccess=()=>resolve(req.result);
-    req.onerror=()=>reject(req.error||new Error('IndexedDB open failed'));
-  });
-  return marketBackupReady;
-}
-async function persistMarketDataBackup(db){
-  try{
-    const idb=await openMarketBackup();
-    await new Promise((resolve,reject)=>{
-      const tx=idb.transaction(MARKET_BACKUP_STORE,'readwrite');
-      tx.objectStore(MARKET_BACKUP_STORE).put({savedAt:Date.now(),db:db},'market_db');
-      tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error);
-    });
-  }catch(e){console.warn('Market backup failed:',e)}
-}
-async function restoreMarketDataBackup(){
-  try{
-    const idb=await openMarketBackup();
-    const snap=await new Promise((resolve,reject)=>{
-      const tx=idb.transaction(MARKET_BACKUP_STORE,'readonly');
-      const req=tx.objectStore(MARKET_BACKUP_STORE).get('market_db');
-      req.onsuccess=()=>resolve(req.result);
-      req.onerror=()=>reject(req.error);
-    });
-    if(!snap || !snap.db) return false;
-    let localSaved=0;
-    try{localSaved=Number(localStorage.getItem(DB+'_saved_at')||0)}catch(_){}
-    if(!localSaved || snap.savedAt>localSaved){
-      dbCache=snap.db;
-      try{
-        localStorage.setItem(DB,JSON.stringify(snap.db));
-        localStorage.setItem(DB+'_saved_at',String(snap.savedAt));
-      }catch(_){}
-      marketIndexCache=null;
-      return true;
-    }
-  }catch(e){console.warn('Market backup restore failed:',e)}
-  return false;
-}
-async function clearMarketDataBackup(){
-  try{
-    const idb=await openMarketBackup();
-    await new Promise((resolve,reject)=>{
-      const tx=idb.transaction(MARKET_BACKUP_STORE,'readwrite');
-      tx.objectStore(MARKET_BACKUP_STORE).delete('market_db');
-      tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error);
-    });
-  }catch(e){console.warn('Market backup clear failed:',e)}
-}
-
-function updateStorageInfo(){const el=$('storageInfo');if(!el)return;try{const raw=localStorage.getItem(DB)||'';const mb=(raw.length*2/1024/1024).toFixed(2);el.textContent=`Local browser storage used by saved monthly data: ${mb} MB. Clear old months if storage is full.`}catch(e){el.textContent='Local browser storage'}}
+let sb=null, sbUser=null, cloudReady=true;
+let cloudSession=null;
+const TEHRI_SESSION_KEY='tehri_supabase_session_v1';
 function setCloudStatus(t,good){document.body.dataset.cloudStatus=t;document.body.dataset.cloudReady=good?'1':'0'}
+function readCloudSession(){try{return JSON.parse(localStorage.getItem(TEHRI_SESSION_KEY)||'null')}catch(_){return null}}
+function saveCloudSession(session){cloudSession=session||null;try{if(session)localStorage.setItem(TEHRI_SESSION_KEY,JSON.stringify(session));else localStorage.removeItem(TEHRI_SESSION_KEY)}catch(e){console.warn('Session storage failed',e)}}
+function applyCloudSession(session){cloudSession=session||null;sbUser=session?.user||null;setCloudStatus(sbUser?'CLOUD':'CLOUD • LOGIN',true)}
+async function cloudProxy(action,payload={}){
+ const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),15000);
+ try{
+  const res=await fetch('/api/supabase',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...payload,access_token:cloudSession?.access_token||null}),signal:ctl.signal});
+  let json=null;try{json=await res.json()}catch(_){ }
+  if(!res.ok)throw new Error(json?.message||json?.error||('HTTP '+res.status));
+  return json;
+ }catch(e){if(e?.name==='AbortError')throw new Error('Supabase proxy connection timed out.');throw e}finally{clearTimeout(timer)}
+}
 async function initSupabase(){
  try{
-  if(!window.supabase || typeof window.supabase.createClient!=='function') throw new Error('Supabase JavaScript library did not load. Please refresh the page.');
-  sb=window.supabase.createClient(TEHRI_SUPABASE_URL,TEHRI_SUPABASE_KEY,{
-   auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}
-  });
-  const {data,error}=await sb.auth.getSession();
-  if(error) throw error;
-  sbUser=data.session?.user||null;
   cloudReady=true;
-  setCloudStatus(sbUser?'CLOUD':'CLOUD • LOGIN',!!sbUser);
-  sb.auth.onAuthStateChange((_e,session)=>{
-   sbUser=session?.user||null;
-   setCloudStatus(sbUser?'CLOUD':'CLOUD • LOGIN',!!sbUser);
-   if(sbUser) setTimeout(()=>syncCloudToLocal().catch(e=>console.warn('Cloud sync failed:',e)),0);
-  });
+  const saved=readCloudSession();
+  if(saved?.access_token&&saved?.user){applyCloudSession(saved);setCloudStatus('CLOUD',true);try{await cloudList();}catch(e){
+    if(/401|403|JWT|token/i.test(String(e.message))&&saved.refresh_token){
+      try{const raw=await cloudProxy('refresh',{refresh_token:saved.refresh_token});saveCloudSession(raw);applyCloudSession(raw)}catch(_){saveCloudSession(null);applyCloudSession(null)}
+    } else {console.warn('Cloud session check failed:',e.message)}
+  }}else applyCloudSession(null);
   return true;
- }catch(e){
-  console.error('Supabase initialization failed:',e);
-  cloudReady=false; sb=null; sbUser=null;
-  setCloudStatus('CLOUD ERROR',false);
-  return false;
- }
+ }catch(e){console.error('Cloud initialization failed:',e);cloudReady=true;applyCloudSession(null);return true}
 }
 function authErrorText(e){
  const msg=String(e?.message||e||'Unknown error');
- if(/failed to fetch|networkerror|load failed|network request failed/i.test(msg)){
-  return 'Supabase server se connection nahi ho raha. App ko Vercel/HTTPS URL se open karein, local HTML file se nahi. Supabase URL: '+TEHRI_SUPABASE_URL;
- }
+ if(/failed to fetch|networkerror|load failed|network request failed/i.test(msg))return 'Cloud connection failed. Please check internet/Vercel deployment.';
  return msg;
 }
-async function directAuthRequest(path,body){
- const ctl=new AbortController();
- const timer=setTimeout(()=>ctl.abort(),15000);
+async function authProxy(action,email,password){
+ const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),15000);
  try{
-  const res=await fetch(TEHRI_SUPABASE_URL+'/auth/v1/'+path,{
-   method:'POST',headers:{'Content-Type':'application/json','apikey':TEHRI_SUPABASE_KEY},
-   body:JSON.stringify(body),signal:ctl.signal
-  });
-  let json=null; try{json=await res.json()}catch(_){}
-  if(!res.ok){
-   const msg=json?.msg||json?.message||json?.error_description||json?.error||('HTTP '+res.status);
-   throw new Error(msg);
-  }
-  return json||{};
- }catch(e){
-  if(e?.name==='AbortError') throw new Error('Supabase connection timed out. Please check internet/project status.');
-  throw new Error(authErrorText(e));
- }finally{clearTimeout(timer)}
+  const res=await fetch('/api/supabase',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,email,password}),signal:ctl.signal});
+  let json=null;try{json=await res.json()}catch(_){ }
+  if(!res.ok)throw new Error(json?.message||json?.error||('HTTP '+res.status));
+  return json;
+ }catch(e){if(e?.name==='AbortError')throw new Error('Cloud login timed out.');throw new Error(authErrorText(e))}finally{clearTimeout(timer)}
 }
-async function cloudList(){if(!cloudReady||!sbUser)return null;const {data,error}=await sb.from('psp_monthly_data').select('*').eq('user_id',sbUser.id);if(error)throw error;return data||[]}
-async function cloudGet(k){if(!cloudReady||!sbUser)return null;const {data,error}=await sb.from('psp_monthly_data').select('*').eq('user_id',sbUser.id).eq('record_key',k).maybeSingle();if(error)throw error;return data?.record||null}
-async function cloudSave(rec){if(!cloudReady||!sbUser)return false;const {error}=await sb.from('psp_monthly_data').upsert({user_id:sbUser.id,record_key:key(rec.segment,rec.year,rec.month),record:rec},{onConflict:'user_id,record_key'});if(error)throw error;return true}
-async function cloudDeleteRecord(k){if(!cloudReady||!sbUser)return false;const {error}=await sb.from('psp_monthly_data').delete().eq('user_id',sbUser.id).eq('record_key',k);if(error)throw error;return true}
-async function cloudDeleteAll(){if(!cloudReady||!sbUser)return false;const {error}=await sb.from('psp_monthly_data').delete().eq('user_id',sbUser.id);if(error)throw error;return true}
+async function cloudList(){if(!cloudReady||!sbUser)return null;const j=await cloudProxy('list');return j.rows||[]}
+async function cloudGet(k){if(!cloudReady||!sbUser)return null;const j=await cloudProxy('get',{record_key:k});return j.record||null}
+async function cloudSave(rec){if(!cloudReady||!sbUser)return false;await cloudProxy('save',{record_key:key(rec.segment,rec.year,rec.month),record:rec});return true}
+async function cloudDeleteRecord(k){if(!cloudReady||!sbUser)return false;await cloudProxy('delete',{record_key:k});return true}
+async function cloudDeleteAll(){if(!cloudReady||!sbUser)return false;await cloudProxy('deleteAll');return true}
 async function syncCloudToLocal(){if(!cloudReady||!sbUser)return;const rows=await cloudList();const db=getDB();for(const row of rows)db[row.record_key]=row.record;putDB(db);renderStack();refreshCurrent()}
 function rangeFor(y,m){let a=BASE[MONTHS[m-1]];return {P1:[a[0],a[1]],G1:[a[2],a[3]],P2:[a[4],a[5]],G2:[a[6],a[7]]}}
 function blocks(s,e){let a=[];if(s<=e){for(let i=s;i<=e;i++)a.push(i)}else{for(let i=s;i<=96;i++)a.push(i);for(let i=1;i<=e;i++)a.push(i)}return a}
@@ -1190,7 +1094,7 @@ function openAuth(){
   $('authSetupHint').style.display=cloudReady?'none':'block';
   $('authEmail').focus();
 }
-$('authBtn').addEventListener('click',()=>{if(cloudReady&&sbUser){sb.auth.signOut();return}openAuth()});
+$('authBtn').addEventListener('click',()=>{if(cloudReady&&sbUser){saveCloudSession(null);applyCloudSession(null);$('authStatus').textContent='Logged out.';return}openAuth()});
 $('closeAuth').addEventListener('click',()=> $('authModal').style.display='none');
 $('signupBtn').addEventListener('click',async()=>{
  if(!cloudReady){$('authStatus').textContent='Cloud login is not configured. Refresh the Vercel website once.';return}
@@ -1199,13 +1103,10 @@ $('signupBtn').addEventListener('click',async()=>{
  if(password.length<6){$('authStatus').textContent='Password must be at least 6 characters.';return}
  $('authStatus').textContent='Creating account...';
  try{
-  const {data,error}=await sb.auth.signUp({email,password});
-  if(error) throw error;
-  $('authStatus').textContent=data?.session?'Account created and logged in.':'Account created. If email confirmation is enabled, confirm the email and then LOGIN.';
- }catch(e){
-  console.error('Supabase signup error:',e);
-  $('authStatus').textContent=authErrorText(e);
- }
+  const data=await authProxy('signup',email,password);
+  if(data?.access_token){saveCloudSession(data);applyCloudSession(data);await syncCloudToLocal().catch(()=>{});$('authModal').style.display='none';$('authStatus').textContent='Account created and logged in.';}
+  else $('authStatus').textContent='Account created. If email confirmation is enabled, confirm the email and then LOGIN.';
+ }catch(e){console.error('Supabase signup error:',e);$('authStatus').textContent=authErrorText(e)}
 });
 $('loginBtn').addEventListener('click',async()=>{
  if(!cloudReady){$('authStatus').textContent='Cloud login is not configured. Refresh the Vercel website once.';return}
@@ -1213,34 +1114,13 @@ $('loginBtn').addEventListener('click',async()=>{
  if(!email||!password){$('authStatus').textContent='Enter email and password.';return}
  $('authStatus').textContent='Connecting to Supabase...';
  try{
-  let data,error;
-  try{({data,error}=await sb.auth.signInWithPassword({email,password}));}catch(clientErr){
-   console.warn('supabase-js auth failed, trying direct Auth API:',clientErr);
-   const raw=await directAuthRequest('token?grant_type=password',{email,password});
-   data={session:{access_token:raw.access_token,refresh_token:raw.refresh_token},user:raw.user};
-   const set=await sb.auth.setSession({access_token:raw.access_token,refresh_token:raw.refresh_token});
-   error=set.error;
-  }
-  if(error) throw error;
-  sbUser=data?.user||sbUser;
-  setCloudStatus('CLOUD',true);
-  $('authStatus').textContent='Login successful. Syncing cloud data...';
-  await syncCloudToLocal();
-  $('authModal').style.display='none';
- }catch(e){
-  console.error('Supabase login error:',e);
-  $('authStatus').textContent=authErrorText(e);
- }
+  const data=await authProxy('login',email,password);
+  if(!data?.access_token||!data?.user)throw new Error('Supabase did not return a valid login session.');
+  saveCloudSession(data);applyCloudSession(data);$('authStatus').textContent='Login successful. Syncing cloud data...';
+  await syncCloudToLocal();$('authModal').style.display='none';
+ }catch(e){console.error('Supabase login error:',e);$('authStatus').textContent=authErrorText(e)}
 });
-if($('cloudStatus')){
- $('cloudStatus').addEventListener('click',()=>{
-  if(sbUser){sb.auth.signOut();return}
-  if(cloudReady){openAuth();return}
-  $('setupModal').style.display='flex';
-  $('sbUrl').value=localStorage.getItem(SB_URL_KEY)||'';
-  $('sbKey').value=localStorage.getItem(SB_ANON_KEY)||'';
- });
-}
+if($('cloudStatus')){$('cloudStatus').addEventListener('click',()=>openAuth())}
 initSupabase().then(()=>{if(cloudReady&&sbUser)syncCloudToLocal().catch(e=>console.warn(e));});
 
 </script>
