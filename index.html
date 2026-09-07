@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js"></script>
 <style>
 :root{--nav:#071b3e;--blue:#123e7a;--red:#c91d2e;--bg:#eef3f8;--card:#fff;--line:#d9e2ee;--txt:#162238;--muted:#66758b;--pump:#f39a3d;--gen:#35a66f}
 *{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--txt)}
@@ -506,8 +506,19 @@ button:focus-visible,.btn:focus-visible,.nav-item:focus-visible,.nav-link:focus-
 <style id="cloud-sync-status-v11">
 body[data-cloud-ready="1"] #cloudStatus{font-weight:800}
 </style>
-<style id="supabase-production-fix">#setupModal{display:none!important}#openSetupFromAuth{display:none!important}</style>
-</head>
+
+<style id="supabase-production-ui-fix">
+#openSetupFromAuth{display:none!important}
+#setupModal{display:none!important}
+</style>
+
+
+
+<style id="supabase-final-cloud-ui">
+#authBtn[data-cloud="ready"]{border-color:#16a34a!important;color:#166534!important}
+#authBtn[data-cloud="offline"]{border-color:#dc2626!important;color:#991b1b!important}
+</style>
+<style>#setupModal{display:none!important}</style></head>
 <body>
 <div class="layout">
 <aside class="side">
@@ -652,28 +663,11 @@ body[data-cloud-ready="1"] #cloudStatus{font-weight:800}
     <p style="font-size:11px;color:#66758b;margin-top:-5px">Sign in to sync your PSP data securely to cloud storage.</p><div id="authSetupHint" style="display:none;background:#fff7e8;border:1px solid #f0d39a;border-radius:10px;padding:10px;margin:8px 0 12px;font-size:11px;color:#7a5700">Supabase Cloud is configured. Login to sync your market data.</div>
     <div class="field" style="margin-bottom:10px"><label>Email</label><input id="authEmail" type="email" placeholder="you@example.com"></div>
     <div class="field" style="margin-bottom:10px"><label>Password</label><input id="authPassword" type="password" placeholder="Password"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn outline" id="closeAuth">CLOSE</button><button class="btn outline" id="openSetupFromAuth">SETUP CLOUD</button><button class="btn primary" id="signupBtn">SIGN UP</button><button class="btn green" id="loginBtn">LOGIN</button></div>
-    <div class="status" id="authStatus"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn outline" id="closeAuth">CLOSE</button><button class="btn primary" id="signupBtn">SIGN UP</button><button class="btn green" id="loginBtn">LOGIN</button></div>
+    <div class="status" id="authStatus"></div><div style="font-size:10px;color:#718096;margin-top:7px;text-align:center">Secure Supabase Auth • Data remains protected by your existing RLS policies.</div>
   </div>
 </div>
-<div id="setupModal" style="display:none;position:fixed;inset:0;background:#061735aa;z-index:21;align-items:center;justify-content:center;padding:20px">
-  <div class="card" style="width:min(560px,100%);margin:0">
-    <h3>Supabase Cloud Setup</h3>
-    <p style="font-size:11px;color:#66758b">Paste your Supabase Project URL and anon/publishable key. These are safe to use in a browser app when Row Level Security is enabled.</p>
-    <div class="field" style="margin-bottom:10px"><label>Project URL</label><input id="sbUrl" placeholder="https://xxxxx.supabase.co"></div>
-    <div class="field" style="margin-bottom:10px"><label>Anon / Publishable Key</label><input id="sbKey" placeholder="eyJ..."></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn outline" id="closeSetup">CLOSE</button><button class="btn primary" id="saveSetup">CONNECT SUPABASE</button></div>
-    <div class="status" id="setupStatus"></div>
-  </div>
-</div>
-<script id="tehri-supabase-project-config">
-(function(){
-  try{
-    localStorage.setItem('tehri_supabase_url','https://kpknazwugehnohojixtl.supabase.co');
-    localStorage.setItem('tehri_supabase_anon','sb_publishable_iFnVavidtYI2vODRItISkA_YqGxH1zR');
-  }catch(e){console.warn('Supabase config storage unavailable',e)}
-})();
-</script>
+<script id="tehri-supabase-project-config"></script>
 
 <script>
 const DB='tehri_psp_month_stack_v2';
@@ -684,6 +678,7 @@ const $=x=>document.getElementById(x);
 function key(seg,y,m){return `${seg}|${y}|${String(m).padStart(2,'0')}`}
 let sb=null, sbUser=null, cloudReady=false;
 const SB_URL_KEY='tehri_supabase_url',SB_ANON_KEY='tehri_supabase_anon';
+const TEHRI_SUPABASE_URL='https://kpknazwugehnohojixtl.supabase.co', TEHRI_SUPABASE_KEY='sb_publishable_iFnVavidtYI2vODRItISkA_YqGxH1zR';
 let dbCache=null,marketIndexCache=null;
 function getDB(){if(dbCache)return dbCache;try{dbCache=JSON.parse(localStorage.getItem(DB)||'{}')}catch(e){dbCache={}}return dbCache}
 function invalidateDbCaches(){dbCache=null;marketIndexCache=null}
@@ -770,21 +765,54 @@ async function clearMarketDataBackup(){
 function updateStorageInfo(){const el=$('storageInfo');if(!el)return;try{const raw=localStorage.getItem(DB)||'';const mb=(raw.length*2/1024/1024).toFixed(2);el.textContent=`Local browser storage used by saved monthly data: ${mb} MB. Clear old months if storage is full.`}catch(e){el.textContent='Local browser storage'}}
 function setCloudStatus(t,good){document.body.dataset.cloudStatus=t;document.body.dataset.cloudReady=good?'1':'0'}
 async function initSupabase(){
-  const u=localStorage.getItem(SB_URL_KEY)||'https://kpknazwugehnohojixtl.supabase.co';
-  const k=localStorage.getItem(SB_ANON_KEY)||'sb_publishable_iFnVavidtYI2vODRItISkA_YqGxH1zR';
-  try{
-    if(!window.supabase || !window.supabase.createClient) throw new Error('Supabase library did not load');
-    sb=window.supabase.createClient(u,k);
-    const {data,error}=await sb.auth.getSession();
-    if(error) throw error;
-    sbUser=data?.session?.user||null; cloudReady=true;
-    setCloudStatus(sbUser?'CLOUD':'CLOUD • LOGIN',!!sbUser);
-    sb.auth.onAuthStateChange((_e,session)=>{
-      sbUser=session?.user||null; setCloudStatus(sbUser?'CLOUD':'CLOUD • LOGIN',!!sbUser);
-      if(sbUser) setTimeout(()=>syncCloudToLocal().catch(e=>console.warn('Cloud sync failed:',e)),0);
-    });
-    return true;
-  }catch(e){ console.error('Supabase initialization failed:',e); cloudReady=false; sb=null; sbUser=null; setCloudStatus('CLOUD ERROR',false); return false; }
+ try{
+  if(!window.supabase || typeof window.supabase.createClient!=='function') throw new Error('Supabase JavaScript library did not load. Please refresh the page.');
+  sb=window.supabase.createClient(TEHRI_SUPABASE_URL,TEHRI_SUPABASE_KEY,{
+   auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}
+  });
+  const {data,error}=await sb.auth.getSession();
+  if(error) throw error;
+  sbUser=data.session?.user||null;
+  cloudReady=true;
+  setCloudStatus(sbUser?'CLOUD':'CLOUD • LOGIN',!!sbUser);
+  sb.auth.onAuthStateChange((_e,session)=>{
+   sbUser=session?.user||null;
+   setCloudStatus(sbUser?'CLOUD':'CLOUD • LOGIN',!!sbUser);
+   if(sbUser) setTimeout(()=>syncCloudToLocal().catch(e=>console.warn('Cloud sync failed:',e)),0);
+  });
+  return true;
+ }catch(e){
+  console.error('Supabase initialization failed:',e);
+  cloudReady=false; sb=null; sbUser=null;
+  setCloudStatus('CLOUD ERROR',false);
+  return false;
+ }
+}
+function authErrorText(e){
+ const msg=String(e?.message||e||'Unknown error');
+ if(/failed to fetch|networkerror|load failed|network request failed/i.test(msg)){
+  return 'Supabase server se connection nahi ho raha. App ko Vercel/HTTPS URL se open karein, local HTML file se nahi. Supabase URL: '+TEHRI_SUPABASE_URL;
+ }
+ return msg;
+}
+async function directAuthRequest(path,body){
+ const ctl=new AbortController();
+ const timer=setTimeout(()=>ctl.abort(),15000);
+ try{
+  const res=await fetch(TEHRI_SUPABASE_URL+'/auth/v1/'+path,{
+   method:'POST',headers:{'Content-Type':'application/json','apikey':TEHRI_SUPABASE_KEY},
+   body:JSON.stringify(body),signal:ctl.signal
+  });
+  let json=null; try{json=await res.json()}catch(_){}
+  if(!res.ok){
+   const msg=json?.msg||json?.message||json?.error_description||json?.error||('HTTP '+res.status);
+   throw new Error(msg);
+  }
+  return json||{};
+ }catch(e){
+  if(e?.name==='AbortError') throw new Error('Supabase connection timed out. Please check internet/project status.');
+  throw new Error(authErrorText(e));
+ }finally{clearTimeout(timer)}
 }
 async function cloudList(){if(!cloudReady||!sbUser)return null;const {data,error}=await sb.from('psp_monthly_data').select('*').eq('user_id',sbUser.id);if(error)throw error;return data||[]}
 async function cloudGet(k){if(!cloudReady||!sbUser)return null;const {data,error}=await sb.from('psp_monthly_data').select('*').eq('user_id',sbUser.id).eq('record_key',k).maybeSingle();if(error)throw error;return data?.record||null}
@@ -1164,20 +1192,55 @@ function openAuth(){
 }
 $('authBtn').addEventListener('click',()=>{if(cloudReady&&sbUser){sb.auth.signOut();return}openAuth()});
 $('closeAuth').addEventListener('click',()=> $('authModal').style.display='none');
-$('openSetupFromAuth').addEventListener('click',()=>{ $('authModal').style.display='none'; $('setupModal').style.display='flex'; $('sbUrl').value=localStorage.getItem(SB_URL_KEY)||''; $('sbKey').value=localStorage.getItem(SB_ANON_KEY)||''; });
-$('signupBtn').addEventListener('click',async()=>{if(!cloudReady){$('authStatus').textContent='Cloud login is not configured. Click SETUP CLOUD first.';return}const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||!password){$('authStatus').textContent='Enter email and password.';return}try{const {error}=await sb.auth.signUp({email,password});$('authStatus').textContent=error?error.message:'Account created. Check your email if confirmation is enabled.';}catch(e){$('authStatus').textContent=e.message}});
-$('loginBtn').addEventListener('click',async()=>{if(!cloudReady){$('authStatus').textContent='Cloud login is not configured. Click SETUP CLOUD first.';return}const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||!password){$('authStatus').textContent='Enter email and password.';return}try{const {error}=await sb.auth.signInWithPassword({email,password});if(error){$('authStatus').textContent=error.message;return}$('authModal').style.display='none';await syncCloudToLocal();}catch(e){$('authStatus').textContent=e.message}});
-if($('cloudStatus')){
- $('cloudStatus').addEventListener('click',()=>{ if(sbUser){sb.auth.signOut();} else {openAuth();} });
-}
-if($('closeSetup')) $('closeSetup').addEventListener('click',()=> $('setupModal').style.display='none');
-if($('saveSetup')) $('saveSetup').addEventListener('click',async()=>{
- const u=$('sbUrl').value.trim(),k=$('sbKey').value.trim();
- if(!u||!k){$('setupStatus').textContent='Both Project URL and publishable key are required.';return;}
- localStorage.setItem(SB_URL_KEY,u);localStorage.setItem(SB_ANON_KEY,k);
- const ok=await initSupabase(); $('setupStatus').textContent=ok?'Supabase connected.':'Connection failed.';
- if(ok){$('setupModal').style.display='none';openAuth();}
+$('signupBtn').addEventListener('click',async()=>{
+ if(!cloudReady){$('authStatus').textContent='Cloud login is not configured. Refresh the Vercel website once.';return}
+ const email=$('authEmail').value.trim(),password=$('authPassword').value;
+ if(!email||!password){$('authStatus').textContent='Enter email and password.';return}
+ if(password.length<6){$('authStatus').textContent='Password must be at least 6 characters.';return}
+ $('authStatus').textContent='Creating account...';
+ try{
+  const {data,error}=await sb.auth.signUp({email,password});
+  if(error) throw error;
+  $('authStatus').textContent=data?.session?'Account created and logged in.':'Account created. If email confirmation is enabled, confirm the email and then LOGIN.';
+ }catch(e){
+  console.error('Supabase signup error:',e);
+  $('authStatus').textContent=authErrorText(e);
+ }
 });
+$('loginBtn').addEventListener('click',async()=>{
+ if(!cloudReady){$('authStatus').textContent='Cloud login is not configured. Refresh the Vercel website once.';return}
+ const email=$('authEmail').value.trim(),password=$('authPassword').value;
+ if(!email||!password){$('authStatus').textContent='Enter email and password.';return}
+ $('authStatus').textContent='Connecting to Supabase...';
+ try{
+  let data,error;
+  try{({data,error}=await sb.auth.signInWithPassword({email,password}));}catch(clientErr){
+   console.warn('supabase-js auth failed, trying direct Auth API:',clientErr);
+   const raw=await directAuthRequest('token?grant_type=password',{email,password});
+   data={session:{access_token:raw.access_token,refresh_token:raw.refresh_token},user:raw.user};
+   const set=await sb.auth.setSession({access_token:raw.access_token,refresh_token:raw.refresh_token});
+   error=set.error;
+  }
+  if(error) throw error;
+  sbUser=data?.user||sbUser;
+  setCloudStatus('CLOUD',true);
+  $('authStatus').textContent='Login successful. Syncing cloud data...';
+  await syncCloudToLocal();
+  $('authModal').style.display='none';
+ }catch(e){
+  console.error('Supabase login error:',e);
+  $('authStatus').textContent=authErrorText(e);
+ }
+});
+if($('cloudStatus')){
+ $('cloudStatus').addEventListener('click',()=>{
+  if(sbUser){sb.auth.signOut();return}
+  if(cloudReady){openAuth();return}
+  $('setupModal').style.display='flex';
+  $('sbUrl').value=localStorage.getItem(SB_URL_KEY)||'';
+  $('sbKey').value=localStorage.getItem(SB_ANON_KEY)||'';
+ });
+}
 initSupabase().then(()=>{if(cloudReady&&sbUser)syncCloudToLocal().catch(e=>console.warn(e));});
 
 </script>
@@ -1328,21 +1391,21 @@ initSupabase().then(()=>{if(cloudReady&&sbUser)syncCloudToLocal().catch(e=>conso
 </script>
 
 
-<script id="supabase-setup-auto-hide">
+
+
+
+<script id="supabase-final-cloud-startup">
 (function(){
-  function hideIfConfigured(){
-    try{
-      const u=localStorage.getItem('tehri_supabase_url');
-      const k=localStorage.getItem('tehri_supabase_anon');
-      const modal=document.getElementById('setupModal');
-      if(u && k && modal && !document.body.dataset.supabaseSetupForced){
-        modal.style.display='none';
-      }
-    }catch(e){}
+  function mark(){
+    const b=document.getElementById('authBtn');
+    if(!b)return;
+    b.dataset.cloud=window.cloudReady?'ready':'offline';
+    if(window.cloudReady) b.title=window.sbUser?'Cloud connected — click to logout':'Supabase Cloud ready — click to login';
   }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',hideIfConfigured);
-  else hideIfConfigured();
+  const oldOpen=window.openAuth;
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',()=>setTimeout(mark,300));
+  }else setTimeout(mark,300);
 })();
 </script>
-
 </body></html>
