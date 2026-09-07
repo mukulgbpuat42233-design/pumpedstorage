@@ -1288,4 +1288,32 @@ initSupabase().then(()=>{if(cloudReady&&sbUser)syncCloudToLocal().catch(e=>conso
   }else setTimeout(mark,300);
 })();
 </script>
+
+<script id="login-button-fallback-v1">
+(function(){
+  function bindLogin(){
+    const btn=document.getElementById('authBtn');
+    const modal=document.getElementById('authModal');
+    const email=document.getElementById('authEmail');
+    if(!btn || !modal || btn.dataset.loginFallback==='1') return;
+    btn.dataset.loginFallback='1';
+    btn.addEventListener('click',function(e){
+      e.preventDefault();
+      modal.style.display='flex';
+      const hint=document.getElementById('authSetupHint');
+      if(hint) hint.style.display='none';
+      if(email) setTimeout(function(){email.focus()},50);
+    },true);
+    const close=document.getElementById('closeAuth');
+    if(close && close.dataset.closeFallback!=='1'){
+      close.dataset.closeFallback='1';
+      close.addEventListener('click',function(){modal.style.display='none'},true);
+    }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',bindLogin);
+  else bindLogin();
+  setTimeout(bindLogin,300);
+  setTimeout(bindLogin,1000);
+})();
+</script>
 </body></html>
